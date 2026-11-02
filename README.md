@@ -40,8 +40,19 @@ Interactive API documentation: <http://127.0.0.1:8000/docs>.
 
 ```bash
 curl http://127.0.0.1:8000/health
-curl -X POST 'http://127.0.0.1:8000/predict?top_k=3' -F 'file=@image.jpg'
+for i in 1 2 3 4 5; do
+  curl -X POST 'http://127.0.0.1:8000/predict?top_k=3' -F 'file=@image.jpg' &
+done
+wait
 ```
+
+The server collects exactly **5 separate requests** before running one batched
+forward pass. Each request receives only its own predictions, using its own
+`top_k`. There is no timeout or partial-batch inference: 1–4 requests wait until
+the fifth arrives. Send requests concurrently, as in the example above.
+One background worker processes batches sequentially; inference runs in a
+thread so the event loop can continue accepting requests. Run with one Uvicorn
+worker: multiple processes would each have their own queue and model.
 
 `POST /predict` accepts a multipart image upload up to 10 MiB and `top_k`
 between 1 and 1000 (default 5). Invalid images return 400, oversized uploads
@@ -51,8 +62,21 @@ return 413, and invalid query values return 422. Each prediction contains
 ## Python usage
 
 ```python
-from inference import load_model, predict
+from inference import load_model, predict, predict_batch
 
 loaded = load_model()
 print(predict("image.jpg", loaded, top_k=3))
+print(predict_batch(["image.jpg", "another.jpg"], loaded, top_k=3))
 ```
+
+`predict_batch` accepts 1–5 images and returns predictions in input order.
+The HTTP queue always waits for exactly 5 requests.
+
+## Test
+
+```bash
+python -m pip install httpx
+python -m unittest -v test_batching
+```
+
+The test uses a small substitute model without downloading pretrained weights.
