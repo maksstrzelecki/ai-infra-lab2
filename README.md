@@ -34,7 +34,39 @@ uvicorn server:app --host 127.0.0.1 --port 8000
 Startup loads the model once and downloads approximately 255 MB of weights on
 first use into the standard PyTorch cache (`~/.cache/torch/hub/checkpoints`).
 Internet access is required for that first download. CPU is the default;
-set `MODEL_DEVICE=cuda` or `MODEL_DEVICE=mps` for supported hardware.
+set `MODEL_DEVICE=cuda` or `MODEL_DEVICE=mps` for supported hardware, with
+`MODEL_QUANTIZE=0` (INT8 here is CPU-only).
+
+## Compilation and quantization
+
+Both optimizations are enabled by default:
+
+- `MODEL_COMPILE=1` compiles convolutional features with `torch.compile`
+  (Inductor). Compilation happens on the first batch, which can take much longer.
+  Different input shapes or batch sizes may trigger another compilation.
+- `MODEL_QUANTIZE=1` applies dynamic INT8 quantization to the final `Linear`
+  classifier on CPU. Its weights are stored in INT8, and activations are
+  quantized at execution time. This is unrelated to dynamic request batching.
+  Convolutions stay FP32, so the reduction in total model memory is modest.
+  The classifier stays outside the compiled graph.
+
+Set either flag to `0` to disable that optimization. For example, to run the
+original FP32 eager model:
+
+```bash
+MODEL_COMPILE=0 MODEL_QUANTIZE=0 uvicorn server:app --host 127.0.0.1 --port 8000
+```
+
+Python callers can use `load_model(compile_model=False, quantize=False)`.
+Compilation requires a working C++ toolchain on CPU. Unsupported configurations
+raise an error rather than silently disabling optimizations. Speed improvements
+and classification accuracy have not been benchmarked on a representative dataset.
+
+This basic implementation uses PyTorch's built-in `torch.ao` dynamic quantization
+API, which is deprecated in favor of torchao. Full INT8 convolutional quantization
+would require a different conversion flow and representative calibration images.
+See [torch.compile](https://docs.pytorch.org/docs/main/user_guide/torch_compiler/torch.compiler.html)
+and [quantization](https://docs.pytorch.org/docs/stable/quantization.html).
 
 Interactive API documentation: <http://127.0.0.1:8000/docs>.
 
@@ -75,8 +107,11 @@ The HTTP queue always waits for exactly 5 requests.
 ## Test
 
 ```bash
-python -m pip install httpx
-python -m unittest -v test_batching
+python -m unittest -v test_optimization
 ```
 
-The test uses a small substitute model without downloading pretrained weights.
+The tests compile and quantize a small substitute model without downloading
+pretrained weights, check numerical agreement, and verify configuration switches.
+Also smoke-tested locally on CPU (macOS ARM64, PyTorch 2.15): pretrained
+EfficientNet-B7 with compilation and INT8 classifier, batch of 5 at the normal
+600×600 input size, producing finite predictions.

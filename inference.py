@@ -15,10 +15,37 @@ class LoadedModel:
     device: torch.device
 
 
-def load_model(device: str = "cpu") -> LoadedModel:
+def optimize_model(model: torch.nn.Module, *, compile_model: bool, quantize: bool):
+    if quantize:
+        if next(model.parameters()).device.type != "cpu":
+            raise ValueError("INT8 quantization requires MODEL_DEVICE=cpu")
+        engines = torch.backends.quantized.supported_engines
+        if (
+            torch.backends.quantized.engine == "none"
+            or torch.backends.quantized.engine not in engines
+        ):
+            engine = next(
+                (name for name in ("x86", "fbgemm", "qnnpack") if name in engines), None
+            )
+            if engine is None:
+                raise RuntimeError("No supported INT8 quantization engine")
+            torch.backends.quantized.engine = engine
+        model.classifier = torch.ao.quantization.quantize_dynamic(
+            model.classifier, {torch.nn.Linear}, dtype=torch.qint8
+        )
+    if compile_model:
+        # Keep the quantized classifier outside the compiled graph.
+        model.features = torch.compile(model.features, dynamic=False)
+    return model
+
+
+def load_model(
+    device: str = "cpu", *, compile_model: bool = True, quantize: bool = True
+) -> LoadedModel:
     """Load pretrained weights (downloaded on first use) in evaluation mode."""
     weights = EfficientNet_B7_Weights.DEFAULT
     model = efficientnet_b7(weights=weights).to(device).eval()
+    model = optimize_model(model, compile_model=compile_model, quantize=quantize)
     return LoadedModel(
         model, weights.transforms(), weights.meta["categories"], torch.device(device)
     )

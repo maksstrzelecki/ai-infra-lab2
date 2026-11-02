@@ -35,7 +35,11 @@ async def batch_worker(app: FastAPI):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.loaded = load_model(os.getenv("MODEL_DEVICE", "cpu"))
+    app.state.loaded = load_model(
+        os.getenv("MODEL_DEVICE", "cpu"),
+        compile_model=os.getenv("MODEL_COMPILE", "1") == "1",
+        quantize=os.getenv("MODEL_QUANTIZE", "1") == "1",
+    )
     app.state.queue = asyncio.Queue()
     worker = asyncio.create_task(batch_worker(app))
     try:
