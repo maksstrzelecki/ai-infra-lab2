@@ -10,7 +10,7 @@ from inference import load_model, predict
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.loaded = load_model(os.getenv("MODEL_DEVICE", "cpu"))
+    app.state.loaded = load_model(os.getenv("MODEL_DEVICE", "mps"))
     app.state.lock = Lock()
     yield
     del app.state.loaded

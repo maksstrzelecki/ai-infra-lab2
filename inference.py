@@ -15,8 +15,10 @@ class LoadedModel:
     device: torch.device
 
 
-def load_model(device: str = "cpu") -> LoadedModel:
+def load_model(device: str = "mps") -> LoadedModel:
     """Load pretrained weights (downloaded on first use) in evaluation mode."""
+    if torch.device(device).type == "mps" and not torch.backends.mps.is_available():
+        raise RuntimeError("MPS is unavailable. Use MODEL_DEVICE=cpu to run on CPU.")
     weights = EfficientNet_B7_Weights.DEFAULT
     model = efficientnet_b7(weights=weights).to(device).eval()
     return LoadedModel(

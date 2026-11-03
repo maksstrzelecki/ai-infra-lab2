@@ -33,8 +33,19 @@ uvicorn server:app --host 127.0.0.1 --port 8000
 
 Startup loads the model once and downloads approximately 255 MB of weights on
 first use into the standard PyTorch cache (`~/.cache/torch/hub/checkpoints`).
-Internet access is required for that first download. CPU is the default;
-set `MODEL_DEVICE=cuda` or `MODEL_DEVICE=mps` for supported hardware.
+Internet access is required for that first download. Apple GPU (`mps`) is the
+default device. Model weights and input tensors are moved to MPS, where the
+forward pass and softmax run; preprocessing remains on CPU. Results are copied
+back to CPU for the JSON response.
+
+MPS must be available in your PyTorch environment; otherwise startup reports
+an error. To explicitly use CPU instead:
+
+```bash
+MODEL_DEVICE=cpu uvicorn server:app --host 127.0.0.1 --port 8000
+```
+
+Python callers can likewise use `load_model("cpu")` to override the MPS default.
 
 Interactive API documentation: <http://127.0.0.1:8000/docs>.
 
